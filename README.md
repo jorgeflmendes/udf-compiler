@@ -43,18 +43,15 @@ intermediate representation, and code generation.
 
 ## Architecture
 
-```text
-UDF source
-   |
-   v
-Flex scanner -> Bison parser -> AST
-                                |
-                                v
-                    semantic analysis + typing
-                                |
-                    +-----------+-----------+
-                    v                       v
-                XML writer             postfix writer
+```mermaid
+flowchart LR
+    SRC["UDF source"] --> SCAN["Flex scanner"]
+    SCAN --> PARSE["Bison parser"]
+    PARSE --> AST["Typed AST nodes"]
+    AST --> TYPE["Semantic analysis<br/>type checker"]
+    TYPE --> XML["XML writer"]
+    TYPE --> POSTFIX["Postfix writer"]
+    POSTFIX --> RTS["CDK / RTS runtime boundary"]
 ```
 
 The scanner and parser construct UDF-specific nodes under `ast/`.

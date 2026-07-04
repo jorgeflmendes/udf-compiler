@@ -1,43 +1,78 @@
-# Architecture Overview
+# UDF Compiler Architecture
 
-The compiler follows a conventional multi-stage pipeline built on top of the CDK infrastructure used in the IST Compilers course.
+This document describes the compiler pipeline and the boundary between the UDF
+implementation and the course-provided CDK/RTS toolchain.
 
-## Pipeline
+## Compilation Pipeline
 
-1. The scanner in `udf_scanner.l` tokenizes the source program.
-2. The parser in `udf_parser.y` builds the abstract syntax tree (AST).
-3. The type checker in `targets/type_checker.cpp` validates semantic correctness.
-4. The XML backend in `targets/xml_writer.cpp` emits an intermediate tree representation.
-5. The postfix backend in `targets/postfix_writer.cpp` emits assembly-oriented output.
+```mermaid
+flowchart LR
+    SRC["UDF source file"] --> SCANNER["udf_scanner.l<br/>Flex scanner"]
+    SCANNER --> TOKENS["Tokens"]
+    TOKENS --> PARSER["udf_parser.y<br/>Bison parser"]
+    PARSER --> AST["UDF AST<br/>ast/"]
+    AST --> TYPE["targets/type_checker.cpp<br/>semantic validation"]
+    TYPE --> XML["targets/xml_writer.cpp<br/>tree inspection"]
+    TYPE --> POSTFIX["targets/postfix_writer.cpp<br/>target code"]
+    POSTFIX --> RTS["CDK / RTS runtime"]
+```
 
+Parsing constructs the UDF-specific AST directly. Semantic analysis validates
+and annotates the tree before any backend visitor emits output.
 
+## Visitor Boundary
 
-## Main Directories
+```mermaid
+flowchart TB
+    NODE["AST node"] --> ACCEPT["accept(visitor, level)"]
+    ACCEPT --> TYPE_VIS["Type checker"]
+    ACCEPT --> XML_VIS["XML writer"]
+    ACCEPT --> POSTFIX_VIS["Postfix writer"]
 
-- `ast/`: AST node definitions for the UDF language.
-- `targets/`: semantic analysis and backend visitors.
-- `.auto/`: generated declarations produced by the CDK tooling.
+    TYPE_VIS --> SYMBOLS["Symbol table and inferred types"]
+    POSTFIX_VIS --> LABELS["Labels, stack layout, and runtime calls"]
+```
 
-## Core Components
+The node hierarchy should remain a structural representation of the language.
+Compiler behavior belongs in visitors, which keeps parsing, semantic analysis,
+and target lowering reviewable as separate concerns.
 
-- `factory.{h,cpp}`: compiler factory registration.
-- `udf_scanner.l`: lexical specification.
-- `udf_parser.y`: grammar and AST construction.
-- `targets/type_checker.*`: semantic validation and type inference.
-- `targets/postfix_writer.*`: code generation backend.
-- `targets/xml_writer.*`: XML visualization/debug backend.
+## Component Responsibilities
 
-## Language-to-Implementation View
+| Component | Responsibility | Boundary |
+| --- | --- | --- |
+| `udf_scanner.l` | Lexical rules, reserved words, and token values | Does not build AST structure |
+| `udf_parser.y` | Grammar, precedence, and AST construction | Does not perform full semantic validation |
+| `ast/` | Concrete language node definitions | Does not own backend logic |
+| `targets/type_checker.cpp` | Symbol validation, type inference, and semantic errors | Does not emit target instructions |
+| `targets/xml_writer.cpp` | Structural XML output for inspection | Does not decide program validity |
+| `targets/postfix_writer.cpp` | Lowering to postfix-oriented target code | Assumes a semantically valid typed tree |
+| `factory.cpp` | CDK compiler registration | Keeps UDF integration localized |
 
-The repository maps the official UDF language reference onto the compiler pipeline in a relatively clean way:
+## Language-to-Implementation Map
 
-- lexical categories and reserved words are defined in `udf_scanner.l`
-- grammatical structure and AST construction live in `udf_parser.y`
-- semantic rules are centralized in `targets/type_checker.cpp`
-- target lowering and runtime calls are centralized in `targets/postfix_writer.cpp`
+```mermaid
+flowchart LR
+    LANGUAGE["Language reference"] --> LEX["Lexical categories"]
+    LANGUAGE --> GRAMMAR["Grammar productions"]
+    LANGUAGE --> SEMANTICS["Semantic rules"]
+    LANGUAGE --> TARGET["Runtime behavior"]
 
-This separation makes it easier to reason about whether a problem belongs to syntax, semantic analysis, or backend code generation.
+    LEX --> SCANNER["udf_scanner.l"]
+    GRAMMAR --> PARSER["udf_parser.y"]
+    SEMANTICS --> CHECKER["type_checker.cpp"]
+    TARGET --> WRITER["postfix_writer.cpp"]
+```
 
-## Notes
+This mapping makes it easier to classify defects: tokenization issues belong
+in the scanner, syntactic structure in the parser, language validity in the
+type checker, and emitted behavior in the postfix writer.
 
-- The repository assumes a local CDK installation, configured through the `ROOT` variable in the `Makefile`.
+## Architectural Constraints
+
+- The build assumes the IST CDK and RTS packages configured through `ROOT` in
+  the Makefile.
+- Authorized course fixtures are not distributed with the repository.
+- The compiler targets the UDF course language, not a stable public ABI.
+- CI is intentionally absent until the external toolchain and fixtures can be
+  reproduced without restricted course dependencies.
